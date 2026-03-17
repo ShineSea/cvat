@@ -6,7 +6,7 @@
 *.htm           text
 *.html          text
 *.js            text
-*.py            text
+*.py            text eol=lf
 *.css           text
 *.md            text
 *.yml           text
