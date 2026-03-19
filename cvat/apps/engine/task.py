@@ -618,23 +618,7 @@ def _create_task_manifest_from_cloud_data(
     manifest.create()
 
 
-def _find_and_filter_related_images(
-    extractor: ImageListReader, *, upload_dir: str
-) -> dict[str, list[str]]:
-    regular_images, related_images = find_related_images(
-        extractor.absolute_source_paths,
-        # backward compatibility
-        is_scene_path=(lambda p: not "related_images" in p.parts),
-    )
 
-    # extractor.filter() uses absolute paths, so we pass them
-    extractor.filter(lambda p: p in regular_images)
-
-    # manifest requires relative files as they would be in the task data, so update the paths
-    return {
-        os.path.relpath(k, upload_dir): [os.path.relpath(ri, upload_dir) for ri in k_ris]
-        for k, k_ris in related_images.items()
-    }
 
 
 def _allocate_honeypots(
@@ -1378,9 +1362,10 @@ def create_thread(
 
     db_task.dimension = extractor.dimension
 
-    related_images = {}
-    if isinstance(extractor, MEDIA_TYPES["image"]["extractor"]):
-        related_images = _find_and_filter_related_images(extractor, upload_dir=upload_dir)
+    related_images =  {
+        os.path.relpath(k, upload_dir): [os.path.relpath(ri, upload_dir) for ri in k_ris]
+        for k, k_ris in extractor.related_images.items()
+    }
 
     if job_file_mapping or (
         (

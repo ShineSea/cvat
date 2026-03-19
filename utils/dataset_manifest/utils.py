@@ -114,6 +114,16 @@ def _prepare_context_list(files: Iterable[_AnyPath], base_dir: _AnyPath | None =
         x.relative_to(base_dir) if base_dir is not None else x for x in filter(is_image, files)
     )
 
+def _prepare_3d_context_list(files: Iterable[_AnyPath], base_dir: _AnyPath | None = None):
+    """
+    Prepares a sorted list of paths, including both images and calibration files.
+    """
+    def is_relevant_file(path: _AnyPath) -> bool:
+        return is_image(path) or path.suffix.lower() == ".txt" and "calib" in path.stem.lower()
+
+    return sorted(
+        x.relative_to(base_dir) if base_dir is not None else x for x in filter(is_relevant_file, files)
+    )
 
 def _find_related_images_2D(
     dataset_paths: Sequence[_AnyPath],
@@ -196,6 +206,16 @@ def _find_related_images_3D(
        <pcd name>/
            <pcd name>.pcd
            <any image name>.<image ext>
+
+    5. Custom 3
+    Layout:
+    dataset/
+        pointcloud/
+            <pcd name>.pcd
+        related_images/
+            <pcd name>_pcd/
+                <any image name>.<image ext>
+                calib.txt
     """
     # There's no point in disallowing multiple layouts simultaneously, but mixing is
     # unlikely to be encountered
@@ -251,7 +271,7 @@ def _find_related_images_3D(
         # TODO: maybe add logging for unmatched related images
 
     related_images = {
-        scene_path: _prepare_context_list(scene_related)
+        scene_path: _prepare_3d_context_list(scene_related)
         for scene_path, scene_related in related_images.items()
         if scene_related
     }
@@ -284,6 +304,7 @@ def find_related_images(
     has_images = False
     has_pcd = False
     has_videos = False
+
     for p in (filter(is_scene_path, dataset_paths) if callable(is_scene_path) else dataset_paths):
         if is_point_cloud(p):
             has_pcd |= True
@@ -291,17 +312,16 @@ def find_related_images(
             has_images |= True
         elif is_video(p):
             has_videos |= True
-
-    if has_videos and (has_pcd or has_images):
-        raise ValueError(
-            "Combined media types are not supported, found: {}".format(
-                ", ".join(
-                    (["video"] if has_videos else [])
-                    + (["images"] if has_images else [])
-                    + (["3d point clouds"] if has_pcd else [])
+        if has_videos and (has_pcd or has_images):
+            raise ValueError(
+                "Combined media types are not supported, found: {}".format(
+                    ", ".join(
+                        (["video"] if has_videos else [])
+                        + (["images"] if has_images else [])
+                        + (["3d point clouds"] if has_pcd else [])
+                    )
                 )
             )
-        )
 
     if has_pcd:
         # get all found scenes and RIs to avoid complaining about excluded scenes

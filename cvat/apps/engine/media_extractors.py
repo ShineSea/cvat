@@ -321,11 +321,13 @@ class ImageListReader(IMediaReader):
             dimension=dimension,
         )
 
-        self._source_paths = sort(source_paths, sorting_method, os.fspath)
         self._sorting_method = sorting_method
+        self._source_paths = sort(source_paths, sorting_method, os.fspath)
         if not hasattr(self, "_validate_dimension"):
             self._validate_dimension = ValidateDimension()
             self._dimension = self._validate_dimension.detect_dimension_for_paths(self.absolute_source_paths)
+        self._related_images={}
+        self.find_and_filter_related_images()
 
     def __iter__(self) -> Iterator[IMediaReader.ImageFrame]:
         for i in self.frame_range:
@@ -377,6 +379,10 @@ class ImageListReader(IMediaReader):
     def absolute_source_paths(self):
         return [self.get_path(idx) for idx, _ in enumerate(self._source_paths)]
 
+    @property
+    def related_images(self):
+        return self._related_images
+
     def __len__(self):
         return len(self.frame_range)
 
@@ -384,6 +390,16 @@ class ImageListReader(IMediaReader):
     def frame_range(self):
         return range(self._start, self._stop + 1, self._step)
 
+    def find_and_filter_related_images(self):
+        from utils.dataset_manifest.utils import find_related_images
+
+        regular_images, related_images = find_related_images(
+            self.absolute_source_paths
+        )
+        self._source_paths = list(regular_images)
+        self._source_paths = sort(self._source_paths, self._sorting_method, os.fspath)
+        self._stop=min(len(self._source_paths) - 1, self._stop)
+        self._related_images = related_images
 
 class DirectoryReader(ImageListReader):
     def __init__(
@@ -1235,6 +1251,14 @@ class ValidateDimension:
     @staticmethod
     def convert_bin_to_pcd(path, delete_source=True):
         return PcdReader.convert_bin_to_pcd(path, delete_source=delete_source)
+
+    @staticmethod
+    def convert_las_to_pcd(path, delete_source=True):
+        return PcdReader.convert_las_to_pcd(path, delete_source=delete_source)
+
+    @staticmethod
+    def convert_ply_to_pcd(path, delete_source=True):
+        return PcdReader.convert_ply_to_pcd(path, delete_source=delete_source)
 
     def bin_operation(self, file_path: str, dataset_root: str) -> str:
         try:
