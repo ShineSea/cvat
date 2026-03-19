@@ -289,6 +289,9 @@ class IMediaReader(ABC):
     def step(self) -> int:
         return self._step
 
+    @property
+    def dimension(self) -> DimensionType:
+        return self._dimension
 
 class ImageListReader(IMediaReader):
     def __init__(
@@ -320,6 +323,9 @@ class ImageListReader(IMediaReader):
 
         self._source_paths = sort(source_paths, sorting_method, os.fspath)
         self._sorting_method = sorting_method
+        if not hasattr(self, "_validate_dimension"):
+            self._validate_dimension = ValidateDimension()
+            self._dimension = self._validate_dimension.detect_dimension_for_paths(self.absolute_source_paths)
 
     def __iter__(self) -> Iterator[IMediaReader.ImageFrame]:
         for i in self.frame_range:
@@ -430,6 +436,7 @@ class ArchiveReader(DirectoryReader):
             dimension=dimension,
             sorting_method=sorting_method,
         )
+        self._validate_dimension.validate(self._get_extract_prefix())
 
 
 class PdfReader(ImageListReader):
@@ -494,17 +501,21 @@ class ZipReader(ImageListReader):
         (zip_path,) = source_paths
         self._zip_source = zipfile.ZipFile(zip_path, mode="r")
         self.extract_dir = extract_dir
-        file_list = [
-            f for f in self._zip_source.namelist() if files_to_ignore(f) and get_mime(f) == "image"
-        ]
+
+        self.extract()
+
+        self._validate_dimension = ValidateDimension()
+        files=self._validate_dimension.validate(self._get_extract_prefix())
+
         super().__init__(
-            file_list,
+            source_paths=files,
             step=step,
             start=start,
             stop=stop,
-            dimension=dimension,
+            dimension=self._validate_dimension.dimension,
             sorting_method=sorting_method,
         )
+
 
     def __del__(self):
         self._zip_source.close()
@@ -1214,6 +1225,7 @@ class ValidateDimension:
         self.dimension = DimensionType.DIM_2D
         self.pcd_files = []
         self.image_files = []
+        self.txt_files = []
         self.converted_files = []
 
     @staticmethod
@@ -1228,14 +1240,16 @@ class ValidateDimension:
         try:
             pcd_path = self.convert_bin_to_pcd(file_path)
             self.converted_files.append(pcd_path)
-            return os.path.relpath(pcd_path, dataset_root)
+           # return os.path.relpath(pcd_path, dataset_root)
+            return pcd_path
         except InvalidPcdError as e:
             raise ValidationError(f"Could not read pcd file '{os.path.basename(file_path)}': {e}")
 
     def pcd_operation(self, file_path: str, dataset_root: str) -> str | None:
         try:
             self.get_pcd_properties(Path(file_path), verify_version=True)
-            return os.path.relpath(file_path, dataset_root)
+           # return os.path.relpath(file_path, dataset_root)
+            return file_path
         except InvalidPcdError as e:
             raise ValidationError(f"Could not read pcd file '{os.path.basename(file_path)}': {e}")
 
@@ -1251,11 +1265,14 @@ class ValidateDimension:
             elif ext == ".pcd":
                 path = self.pcd_operation(file_path, dataset_root)
                 self.pcd_files.append(path)
+            elif ext == ".txt":
+                self.txt_files.append(file_path)
             else:
                 if _is_image(file_path):
                     self.image_files.append(file_path)
 
-    def validate(self, path: str):
+
+    def validate(self, path: str)->list[str]:
         "Detect media dimension and convert all point clouds into the .pcd format"
 
         root = path
@@ -1264,9 +1281,10 @@ class ValidateDimension:
                 continue
 
             self._process_files(dirpath, root, filenames)
-
-        if self.pcd_files:
-            self.dimension = DimensionType.DIM_3D
+        files = self.pcd_files + self.image_files+self.txt_files
+        path_list = [Path(s) for s in files]
+        self.dimension = self.detect_dimension_for_paths(path_list)
+        return path_list
 
     def detect_dimension_for_paths(self, paths: Sequence[PurePath]) -> DimensionType:
         detected_dimensions = detect_media_dimension(paths)

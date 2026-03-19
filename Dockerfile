@@ -3,6 +3,15 @@ ARG BASE_IMAGE=ubuntu:22.04
 
 FROM ${BASE_IMAGE} AS build-image-base
 
+RUN rm -f /etc/apt/sources.list.d/ubuntu.sources && \
+    printf "deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse\n\
+deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe multiverse\n\
+deb http://mirrors.aliyun.com/ubuntu/ jammy-backports main restricted universe multiverse\n\
+deb http://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse\n" \
+> /etc/apt/sources.list && \
+    apt-get clean && \
+    apt-get update
+
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends install -yq \
         curl \
@@ -182,12 +191,9 @@ COPY --from=build-image-av /opt/ffmpeg/lib /usr/lib
 ARG CVAT_DEBUG_ENABLED
 RUN if [ "${CVAT_DEBUG_ENABLED}" = 'yes' ]; then \
         python3 -m pip install --no-cache-dir debugpy; \
+    else \
+        python3 -m pip uninstall -y pip; \
     fi
-
-# Removing pip due to security reasons. See: https://scout.docker.com/vulnerabilities/id/CVE-2018-20225
-# The vulnerability is dubious and we don't use pip at runtime, but some vulnerability scanners mark it as a high vulnerability,
-# and it was decided to remove pip from the final image
-RUN python -m pip uninstall -y pip
 
 # Install and initialize CVAT, copy all necessary files
 COPY cvat/nginx.conf /etc/nginx/nginx.conf
